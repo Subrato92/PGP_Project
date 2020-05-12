@@ -1,3 +1,10 @@
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -12,6 +19,7 @@ import java.security.PublicKey;
 import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Map;
 
 import javax.crypto.BadPaddingException;
@@ -20,6 +28,7 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.bouncycastle.asn1.pkcs.RSAPublicKey;
 
@@ -27,20 +36,34 @@ public class PgpMain {
 
 	public static void main(String[] args) {
 		try {
+			
+			PublicKey publicKey = getPublicKey("/media/john/CommonDisk/IT PROJECTS/EncryptionProjects/pgp-master/public.key");
+			PrivateKey privateKey = getPrivateKey("/media/john/CommonDisk/IT PROJECTS/EncryptionProjects/pgp-master/private.key");
+			
+			//Receiving the File
+			File encryptedFile = null;
+			
+			
+			
+			//===========================================================================================
+			
+			String input = "Subrato Mondalxcxs## ]";
+			filterNewlineChars(input);
+			StringBuilder sb = new StringBuilder();
+			sb.append(input);
+			sb.append(System.lineSeparator());			
+			filterNewlineChars(sb.toString());
+			
 			KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
 			keyGenerator.init(128);
 			SecretKey secretKey = keyGenerator.generateKey();
-
-			String input = "Subrato Mondalxcxs## ]";
+			
 			byte[] keyBytes = input.getBytes(StandardCharsets.UTF_8);
 			printByte(keyBytes, "Byte Conversion of String...", StandardCharsets.UTF_8, StandardCharsets.UTF_16);
 
 			byte[] encryptedBytes = encrypt("AES/ECB/PKCS5Padding", secretKey, keyBytes);
 			printByte(encryptedBytes, "\nPost Encryption of String...", StandardCharsets.UTF_8,
 					StandardCharsets.UTF_16);
-
-			PublicKey publicKey = getPublicKey("/media/john/CommonDisk/IT PROJECTS/EncryptionProjects/pgp-master/public.key");
-			PrivateKey privateKey = getPrivateKey("/media/john/CommonDisk/IT PROJECTS/EncryptionProjects/pgp-master/private.key");
 
 			byte[] rsaEncBytes = rsaEncrypt(encryptedBytes, publicKey);
 			printByte(rsaEncBytes, "\nRSA Encrypted byteArr...", StandardCharsets.UTF_8,
@@ -71,6 +94,165 @@ public class PgpMain {
 			e.printStackTrace();
 		}
 
+	}
+	
+	private static File encryptionFlow(File encryptedFile, PublicKey publicKey) {
+		//Extracting Key and Data
+		String[] arr = extractDataElements(encryptedFile);
+		
+		//Removing NewLine chars from sessionKey
+		if(arr!=null && arr.length==2) {
+			arr[0] = filterNewlineChars(arr[0]);
+		}
+		
+		//Base64Decoding of the data
+		Base64.Decoder decoder = Base64.getDecoder();
+		byte[] encByteSecretKey = decoder.decode(arr[0]);
+		byte[] encByteData = decoder.decode(arr[1]);
+		
+		//decrypt secretKey with PGP decoder
+		byte[] byteSecretKey = rsaEncrypt(encByteData, publicKey);
+		SecretKey secKey = new SecretKeySpec(byteSecretKey, "AES");
+		
+		//decrypt data using secretKey
+		byte[] byteData = decrypt("AES/ECB/PKCS5Padding", secKey, encByteData);
+		String data = new String(byteData, StandardCharsets.UTF_8);
+		
+		String newFileName = encryptedFile.getName();
+		String[] nameElements = newFileName.split(".");
+		newFileName = "";
+		for(int i=0;i<nameElements.length-1;i++) {
+			newFileName = newFileName.concat(nameElements[i]);
+			if(i<nameElements.length-2) {
+				newFileName = newFileName.concat(".");
+			}
+		}
+		String path = encryptedFile.getPath().substring(0, encryptedFile.getPath().length()-encryptedFile.getName().length());
+		path = path.concat(newFileName);
+		
+		File nwFile = new File(path);
+		FileWriter writer;
+		try {
+			writer = new FileWriter(nwFile);
+			BufferedWriter bufWriter = new BufferedWriter(writer);
+			bufWriter.write(data);
+			bufWriter.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		
+		return nwFile;
+	}
+	
+	private static File decryptionFlow(File encryptedFile, PrivateKey privateKey) {
+		//Extracting Key and Data
+		String[] arr = extractDataElements(encryptedFile);
+		
+		//Removing NewLine chars from sessionKey
+		if(arr!=null && arr.length==2) {
+			arr[0] = filterNewlineChars(arr[0]);
+		}
+		
+		//Base64Decoding of the data
+		Base64.Decoder decoder = Base64.getDecoder();
+		byte[] encByteSecretKey = decoder.decode(arr[0]);
+		byte[] encByteData = decoder.decode(arr[1]);
+		
+		//decrypt secretKey with PGP decoder
+		byte[] byteSecretKey = rsaDecrypt(encByteSecretKey, privateKey);
+		SecretKey secKey = new SecretKeySpec(byteSecretKey, "AES");
+		
+		//decrypt data using secretKey
+		byte[] byteData = decrypt("AES/ECB/PKCS5Padding", secKey, encByteData);
+		String data = new String(byteData, StandardCharsets.UTF_8);
+		
+		String newFileName = encryptedFile.getName();
+		String[] nameElements = newFileName.split(".");
+		newFileName = "";
+		for(int i=0;i<nameElements.length-1;i++) {
+			newFileName = newFileName.concat(nameElements[i]);
+			if(i<nameElements.length-2) {
+				newFileName = newFileName.concat(".");
+			}
+		}
+		String path = encryptedFile.getPath().substring(0, encryptedFile.getPath().length()-encryptedFile.getName().length());
+		path = path.concat(newFileName);
+		
+		File nwFile = new File(path);
+		FileWriter writer;
+		try {
+			writer = new FileWriter(nwFile);
+			BufferedWriter bufWriter = new BufferedWriter(writer);
+			bufWriter.write(data);
+			bufWriter.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		
+		return nwFile;
+	}
+	
+	private static String[] extractDataElements(File file) {
+		
+		String[] dataArr = null;
+		
+		FileReader reader;
+		BufferedReader bufReader; 
+		try {
+			reader = new FileReader(file);
+			bufReader = new BufferedReader(reader);
+			
+			String encryptedKey = bufReader.readLine();
+			
+			String dataLine = bufReader.readLine();
+			StringBuilder dataBuilder = new StringBuilder();
+			while(dataLine!=null) {
+				dataBuilder.append(dataLine);
+				dataLine = bufReader.readLine();
+				
+				if(dataLine!=null)
+					dataBuilder.append(System.lineSeparator());
+			}
+			String data = dataBuilder.toString();
+			if(encryptedKey!=null) {
+				dataArr = new String[2];
+				dataArr[0] = encryptedKey;
+				dataArr[1] = data;
+			}
+			
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return dataArr;
+	}
+	
+	private static String filterNewlineChars(String data) {
+		
+		if(data==null) {
+			
+		}
+		System.out.println("String:"+data);
+		char carriageReturn = '\r';
+		char newLine = '\n';
+		int length = data.length();
+		int indx = 0;
+		while(indx<length && data.charAt(indx)!=carriageReturn && data.charAt(indx) != newLine) {
+			indx++;
+		}
+		
+		String modData = data.substring(0, indx);
+		System.out.println("AcLength:"+data.length()+", ModLength:"+modData.length());
+		
+		return modData;
 	}
 	
 	public static byte[] rsaEncrypt(byte[] data, PublicKey publicKey) {
